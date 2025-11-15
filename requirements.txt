@@ -1,0 +1,8 @@
+torch>=2.9.0
+torchsummary
+numpy==1.23.5
+torchvision>=0.15.0
+wandb
+Pillow
+tqdm
+scikit-learn
