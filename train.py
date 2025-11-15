@@ -280,7 +280,7 @@ def main():
         config=config
     )
     
-    print(f"Using device: {args.device}")
+    print(f"Using device: {device}")
     print(f"Configuration: {config}")
     
     # Load image paths and labels
@@ -310,7 +310,7 @@ def main():
     
     # Initialize model
     model = MobileNetV1(ch_in=args.ch_in, n_classes=args.n_classes, alpha=args.alpha)
-    model = model.to(args.device)
+    model = model.to(device)
     
     # Count parameters
     total_params = sum(p.numel() for p in model.parameters())
@@ -357,10 +357,10 @@ def main():
         print("-" * 50)
         
         # Train
-        train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, args.device)
+        train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device)
         
         # Validate
-        val_loss, val_acc = validate(model, val_loader, criterion, args.device)
+        val_loss, val_acc = validate(model, val_loader, criterion, device)
         
         # Update learning rate
         scheduler.step(val_loss)
@@ -395,7 +395,7 @@ def main():
     print("Evaluating on test set...")
     checkpoint = torch.load(args.best_model_path)
     model.load_state_dict(checkpoint['model_state_dict'])
-    test_loss, test_acc = validate(model, test_loader, criterion, args.device)
+    test_loss, test_acc = validate(model, test_loader, criterion, device)
     print(f"Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}")
     wandb.log({'test_loss': test_loss, 'test_acc': test_acc})
     wandb.run.summary['test_loss'] = test_loss
