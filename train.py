@@ -9,7 +9,8 @@ from pathlib import Path
 from tqdm import tqdm
 import numpy as np
 import argparse
-from utils.model import MobileNetV1
+from utils.mobilenet import MobileNetV1
+from utils.femto_mobilenet import FemtoMobileNetV1
 from sklearn.metrics import accuracy_score
 
 
@@ -199,6 +200,8 @@ def parse_args():
                         help='Ratio of test data (default: 0.1)')
     
     # Model arguments
+    parser.add_argument('--model_type', type=str, default='femto_mobilenet', choices=['mobilenet', 'femto_mobilenet'],
+                        help='Type of model to use (default: femto_mobilenet)')
     parser.add_argument('--alpha', type=float, default=1.0,
                         help='Width multiplier for MobileNet (default: 1.0)')
     parser.add_argument('--ch_in', type=int, default=3,
@@ -253,6 +256,7 @@ def main():
     config = {
         'data_dir': args.data_dir,
         'run_name': args.run_name,
+        'model_type': args.model_type,
         'train_ratio': args.train_ratio,
         'val_ratio': args.val_ratio,
         'test_ratio': args.test_ratio,
@@ -309,7 +313,12 @@ def main():
                              num_workers=args.num_workers, pin_memory=True)
     
     # Initialize model
-    model = MobileNetV1(ch_in=args.ch_in, n_classes=args.n_classes, alpha=args.alpha)
+    if args.model_type == 'mobilenet':
+        model = MobileNetV1(ch_in=args.ch_in, n_classes=args.n_classes, alpha=args.alpha)
+    elif args.model_type == 'femto_mobilenet':
+        model = FemtoMobileNetV1(ch_in=args.ch_in, n_classes=args.n_classes, alpha=args.alpha)
+    else:
+        raise ValueError(f"Invalid model type: {args.model_type}")
     model = model.to(device)
     
     # Count parameters
