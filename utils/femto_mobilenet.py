@@ -11,7 +11,7 @@ class FemtoMobileNetV1(nn.Module):
             oup_scaled = int(oup * alpha)
             return nn.Sequential(
                 nn.LazyConv2d(inp, oup_scaled, kernel_size, stride, padding=0, bias=False),
-                nn.BatchNorm2d(oup_scaled),
+                # nn.BatchNorm2d(oup_scaled),
                 nn.ReLU(inplace=True)
             )
 
@@ -22,20 +22,23 @@ class FemtoMobileNetV1(nn.Module):
             return nn.Sequential(
                 # Depthwise convolution
                 nn.LazyConv2d(inp_scaled, kernel_size, stride, padding=0, groups=inp_scaled, bias=False),
-                nn.BatchNorm2d(inp_scaled),
+                # nn.BatchNorm2d(inp_scaled),
                 nn.ReLU(inplace=True),
 
                 # Pointwise convolution
                 nn.LazyConv2d(oup_scaled, kernel_size=1, stride=1, padding=0, bias=False),
-                nn.BatchNorm2d(oup_scaled),
+                # nn.BatchNorm2d(oup_scaled),
                 nn.ReLU(inplace=True),
             )
 
         # Model architecture
         self.model = nn.Sequential(
+            # CPU
             conv_full(ch_in, 32, 2),
             conv_ds(32, 64, 1),
             conv_ds(64, 128, 2),
+
+            # SPU
             conv_ds(128, 128, 1),
             conv_ds(128, 256, 2),
             conv_ds(256, 256, 1),
@@ -47,6 +50,8 @@ class FemtoMobileNetV1(nn.Module):
             conv_ds(512, 512, 1),
             conv_ds(512, 1024, 2),
             conv_ds(1024, 1024, 1),
+
+            # CPU
             nn.AvgPool2d(7)  
         )
         self.fc = nn.Linear(int(1024 * alpha), n_classes)
@@ -63,4 +68,3 @@ if __name__=='__main__':
     # Check model
     model = FemtoMobileNetV1(alpha=0.5)
     summary(model, input_size=(3, 224, 224), device='cpu')
-    
