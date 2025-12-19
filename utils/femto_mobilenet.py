@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 from torchsummary import summary
 
@@ -40,7 +39,7 @@ class FemtoMobileNetV1(nn.Module):
 
             # SPU
             conv_ds(inp=128, oup=128, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=128, oup=256, kernel=(3, 3), stride=2, padding=0),
+            conv_ds(inp=128, oup=256, kernel=(3, 3), stride=1, padding=0),
             conv_ds(inp=256, oup=256, kernel=(3, 3), stride=1, padding=0),
             conv_ds(inp=256, oup=512, kernel=(3, 3), stride=1, padding=0),
             conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
