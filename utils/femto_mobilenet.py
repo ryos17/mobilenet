@@ -7,6 +7,7 @@ class FemtoMobileNetV1(nn.Module):
     def __init__(self, ch_in=3, n_classes=2, alpha=1.0):
         super(FemtoMobileNetV1, self).__init__()
         self.alpha = alpha
+        self._first_forward = True
 
         # Full convolution block
         def conv_full(inp, oup, kernel, stride, padding):
@@ -38,17 +39,17 @@ class FemtoMobileNetV1(nn.Module):
             conv_ds(inp=64, oup=128, kernel=(3, 3), stride=2, padding=1),
 
             # SPU
-            conv_ds(inp=128, oup=128, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=128, oup=256, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=256, oup=256, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=256, oup=512, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=1024, kernel=(1, 3), stride=1, padding=0),
-            conv_ds(inp=1024, oup=1024, kernel=(1, 3), stride=1, padding=0),
+            conv_ds(inp=128, oup=128, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=128, oup=256, kernel=(3, 3), stride=2, padding=0),
+            conv_ds(inp=256, oup=256, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=256, oup=512, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=512, oup=1024, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=1024, oup=1024, kernel=(3, 3), stride=1, padding=0),
 
             # CPU
             nn.AdaptiveAvgPool2d(1)  
@@ -57,20 +58,25 @@ class FemtoMobileNetV1(nn.Module):
         self.softmax = nn.Softmax(dim=1)  
 
     def forward(self, x):
-        x = NHWC_to_NCHW()(x)
-        x = self.model(x)
-        x = NCHW_to_NHWC()(x)
-
-        x = x.view(-1, int(1024 * self.alpha))
-        x = self.fc(x)
-        x = self.softmax(x)
+        if self._first_forward:
+            print(f"Input shape: {x.shape}")
+            
+            # Process through each layer and print sizes
+            for i, layer in enumerate(self.model):
+                x = layer(x)
+                print(f"After layer {i} ({type(layer).__name__}): {x.shape}")
+            
+            x = x.view(-1, int(1024 * self.alpha))
+            print(f"After view: {x.shape}")
+            x = self.fc(x)
+            print(f"After FC: {x.shape}")
+            x = self.softmax(x)
+            print(f"After softmax: {x.shape}")
+            self._first_forward = False
+        else:
+            x = self.model(x)
+            x = x.view(-1, int(1024 * self.alpha))
+            x = self.fc(x)
+            x = self.softmax(x)
 
         return x
-
-class NHWC_to_NCHW(nn.Module):
-    def forward(self, x):
-        return torch.permute(x, (0, 3, 1, 2))
-
-class NCHW_to_NHWC(nn.Module):
-    def forward(self, x):
-        return torch.permute(x, (0, 2, 3, 1))
