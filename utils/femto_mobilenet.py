@@ -12,7 +12,7 @@ class FemtoMobileNetV1(nn.Module):
         def conv_full(inp, oup, stride):
             oup_scaled = int(oup * alpha)
             return nn.Sequential(
-                nn.Conv2d(inp, oup_scaled, kernel_size, stride, padding=0, bias=False),
+                nn.LazyConv2d(oup_scaled, kernel_size, stride, padding=0, bias=False),
                 nn.ReLU(inplace=True)
             )
 
@@ -22,11 +22,11 @@ class FemtoMobileNetV1(nn.Module):
             oup_scaled = int(oup * alpha)
             return nn.Sequential(
                 # Depthwise convolution
-                nn.Conv2d(inp_scaled, inp_scaled, kernel_size, stride, padding=0, groups=inp_scaled, bias=False),
+                nn.LazyConv2d(inp_scaled, kernel_size, stride, padding=0, groups=inp_scaled, bias=False),
                 nn.ReLU(inplace=True),
 
                 # Pointwise convolution
-                nn.Conv2d(inp_scaled, oup_scaled, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.LazyConv2d(oup_scaled, kernel_size=1, stride=1, padding=0, bias=False),
                 nn.ReLU(inplace=True),
             )
 
@@ -48,7 +48,7 @@ class FemtoMobileNetV1(nn.Module):
             conv_ds(512, 512, 1),
             conv_ds(512, 512, 1),
             conv_ds(512, 1024, 2),
-            conv_ds(128, 1024, 1),
+            conv_ds(1024, 1024, 1),
 
             # CPU
             nn.AdaptiveAvgPool2d(1)  
