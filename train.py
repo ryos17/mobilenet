@@ -202,7 +202,7 @@ def parse_args():
     # Model arguments
     parser.add_argument('--model_type', type=str, default='femto_mobilenet', choices=['mobilenet', 'femto_mobilenet'],
                         help='Type of model to use (default: femto_mobilenet)')
-    parser.add_argument('--alpha', type=float, default=1.0,
+    parser.add_argument('--alpha', type=float, default=0.25,
                         help='Width multiplier for MobileNet (default: 1.0)')
     parser.add_argument('--ch_in', type=int, default=3,
                         help='Number of input channels (default: 3 for RGB)')
@@ -228,10 +228,10 @@ def parse_args():
                         help='Device to use (cuda/cpu). Auto-detect if not specified')
     parser.add_argument('--num_workers', type=int, default=4,
                         help='Number of workers for data loading (default: 4)')
-    parser.add_argument('--wandb_project', type=str, default='mobilenetv1-vww',
-                        help='Wandb project name (default: mobilenetv1-vww)')
-    parser.add_argument('--wandb_entity', type=str, default='ryos17-stanford-university',
-                        help='Wandb entity name (default: ryos17-stanford-university)')
+    parser.add_argument('--wandb_project', type=str, default='femto-mobilenet-vww',
+                        help='Wandb project name (default: femto-mobilenet-vww)')
+    parser.add_argument('--wandb_entity', type=str, default='deep-learning',
+                        help='Wandb entity name (default: deep-learning)')
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint to resume training from (default: None)')
     
@@ -320,6 +320,12 @@ def main():
     else:
         raise ValueError(f"Invalid model type: {args.model_type}")
     model = model.to(device)
+    
+    # Initialize lazy modules (LazyConv2d) with a dummy forward pass
+    if args.model_type == 'femto_mobilenet':
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, args.ch_in, 224, 224).to(device)
+            _ = model(dummy_input)
     
     # Count parameters
     total_params = sum(p.numel() for p in model.parameters())
