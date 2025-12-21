@@ -93,11 +93,20 @@ def split_dataset(image_paths, labels, train_ratio, val_ratio, test_ratio, seed=
     return (train_paths, train_labels), (val_paths, val_labels), (test_paths, test_labels)
 
 
-def get_transforms(is_train=True):
-    """Get ImageNetdata transforms for training or validation."""
+def get_transforms(is_train=True, rho=1.0, baseline_size=224):
+    """Get ImageNet data transforms for training or validation.
+    
+    Args:
+        is_train: Whether to use training transforms (with augmentation)
+        rho: Resolution multiplier (default: 1.0 for baseline 224x224)
+        baseline_size: Baseline input size (default: 224)
+    """
+    # Calculate input size based on resolution multiplier
+    input_size = int(baseline_size * rho)
+    
     if is_train:
         return transforms.Compose([
-            transforms.Resize((224, 224)),
+            transforms.Resize((input_size, input_size)),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             transforms.ToTensor(),
@@ -105,7 +114,7 @@ def get_transforms(is_train=True):
         ])
     else:
         return transforms.Compose([
-            transforms.Resize((224, 224)),
+            transforms.Resize((input_size, input_size)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
@@ -204,6 +213,10 @@ def parse_args():
                         help='Type of model to use (default: femto_mobilenet)')
     parser.add_argument('--alpha', type=float, default=0.25,
                         help='Width multiplier for MobileNet (default: 1.0)')
+    parser.add_argument('--baseline_size', type=int, default=224,
+                        help='Baseline input image size (default: 224)')
+    parser.add_argument('--rho', type=float, default=96/224,
+                        help='Resolution multiplier for MobileNet (default: 96/224)')
     parser.add_argument('--ch_in', type=int, default=3,
                         help='Number of input channels (default: 3 for RGB)')
     parser.add_argument('--n_classes', type=int, default=2,
@@ -252,6 +265,10 @@ def main():
     else:
         device = args.device
     
+    # Calculate input size based on resolution multiplier
+    baseline_size = args.baseline_size
+    input_size = int(baseline_size * args.rho)
+    
     # Configuration dictionary
     config = {
         'data_dir': args.data_dir,
@@ -261,6 +278,8 @@ def main():
         'val_ratio': args.val_ratio,
         'test_ratio': args.test_ratio,
         'alpha': args.alpha,
+        'rho': args.rho,
+        'input_size': input_size,
         'ch_in': args.ch_in,
         'n_classes': args.n_classes,
         'best_model_path': args.best_model_path,
@@ -286,6 +305,8 @@ def main():
     
     print(f"Using device: {device}")
     print(f"Configuration: {config}")
+    print(f"Resolution multiplier (rho): {args.rho}")
+    print(f"Input size: {input_size}x{input_size} (baseline: {baseline_size}x{baseline_size})")
     
     # Load image paths and labels
     image_paths, labels = load_image_paths(args.data_dir)
@@ -299,10 +320,13 @@ def main():
         seed=args.seed
     )
     
-    # Create datasets
-    train_dataset = ImageDataset(train_data[0], train_data[1], transform=get_transforms(is_train=True))
-    val_dataset = ImageDataset(val_data[0], val_data[1], transform=get_transforms(is_train=False))
-    test_dataset = ImageDataset(test_data[0], test_data[1], transform=get_transforms(is_train=False))
+    # Create datasets with resolution multiplier
+    train_dataset = ImageDataset(train_data[0], train_data[1], 
+                                  transform=get_transforms(is_train=True, rho=args.rho, baseline_size=baseline_size))
+    val_dataset = ImageDataset(val_data[0], val_data[1], 
+                                transform=get_transforms(is_train=False, rho=args.rho, baseline_size=baseline_size))
+    test_dataset = ImageDataset(test_data[0], test_data[1], 
+                                 transform=get_transforms(is_train=False, rho=args.rho, baseline_size=baseline_size))
     
     # Create data loaders
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, 
@@ -321,10 +345,10 @@ def main():
         raise ValueError(f"Invalid model type: {args.model_type}")
     model = model.to(device)
     
-    # Initialize lazy modules (LazyConv2d) with a dummy forward pass
+    # Initialize lazy modules (LazyConv2d) with a dummy forward pass using resolution multiplier
     if args.model_type == 'femto_mobilenet':
         with torch.no_grad():
-            dummy_input = torch.zeros(1, args.ch_in, 224, 224).to(device)
+            dummy_input = torch.zeros(1, args.ch_in, input_size, input_size).to(device)
             _ = model(dummy_input)
     
     # Count parameters

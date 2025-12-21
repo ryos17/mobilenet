@@ -1,5 +1,4 @@
 import torch.nn as nn
-from torchsummary import summary
 
 
 class FemtoMobileNetV1(nn.Module):
@@ -9,46 +8,49 @@ class FemtoMobileNetV1(nn.Module):
         self._first_forward = True
 
         # Full convolution block
-        def conv_full(inp, oup, kernel, stride, padding):
+        def conv_full(inp, oup, kernel=(3, 3), stride=2, padding=1):
             oup_scaled = int(oup * alpha)
             return nn.Sequential(
                 nn.LazyConv2d(oup_scaled, kernel, stride, padding, bias=False),
+                nn.BatchNorm2d(oup_scaled, affine=False),
                 nn.ReLU(inplace=True)
             )
 
         # Depthwise separable convolution block
-        def conv_ds(inp, oup, kernel, stride, padding):
+        def conv_ds(inp, oup, kernel=(3, 3), stride=1, padding=1):
             inp_scaled = int(inp * alpha)
             oup_scaled = int(oup * alpha)
             return nn.Sequential(
                 # Depthwise convolution
                 nn.LazyConv2d(inp_scaled, kernel, stride, padding, groups=inp_scaled, bias=False),
+                nn.BatchNorm2d(inp_scaled, affine=False),
                 nn.ReLU(inplace=True),
 
                 # Pointwise convolution
                 nn.LazyConv2d(oup_scaled, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.BatchNorm2d(oup_scaled, affine=False),
                 nn.ReLU(inplace=True),
             )
 
         # Model architecture
         self.model = nn.Sequential(
             # CPU
-            conv_full(inp=ch_in, oup=32, kernel=(3, 3), stride=2, padding=1),
-            conv_ds(inp=32, oup=64, kernel=(3, 3), stride=1, padding=1),
-            conv_ds(inp=64, oup=128, kernel=(3, 3), stride=2, padding=1),
+            conv_full(inp=ch_in, oup=32, stride=2, padding=1),
+            conv_ds(inp=32, oup=64, stride=1, padding=1),
+            conv_ds(inp=64, oup=128, stride=2, padding=1),
 
             # SPU
-            conv_ds(inp=128, oup=128, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=128, oup=256, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=256, oup=256, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=256, oup=512, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=512, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=512, oup=1024, kernel=(3, 3), stride=1, padding=0),
-            conv_ds(inp=1024, oup=1024, kernel=(3, 3), stride=1, padding=0),
+            conv_ds(inp=128, oup=128, stride=1, padding=0),
+            conv_ds(inp=128, oup=256, stride=1, padding=0),
+            conv_ds(inp=256, oup=256, stride=1, padding=0),
+            conv_ds(inp=256, oup=512, stride=1, padding=0),
+            conv_ds(inp=512, oup=512, stride=1, padding=0),
+            conv_ds(inp=512, oup=512, stride=1, padding=0),
+            conv_ds(inp=512, oup=512, stride=1, padding=0),
+            conv_ds(inp=512, oup=512, stride=1, padding=0),
+            conv_ds(inp=512, oup=512, stride=1, padding=0),
+            conv_ds(inp=512, oup=1024, stride=1, padding=0),
+            conv_ds(inp=1024, oup=1024, stride=1, padding=0),
 
             # CPU
             nn.AdaptiveAvgPool2d(1)  
