@@ -61,12 +61,9 @@ class FemtoMobileNetV1(nn.Module):
     def forward(self, x):
         if self._first_forward:
             print(f"\nInput shape: {x.shape}")
-            
-            # Process through each layer and print sizes
             for i, layer in enumerate(self.model):
                 x = layer(x)
                 print(f"After layer {i} ({type(layer).__name__}): {x.shape}")
-            
             x = x.view(-1, int(1024 * self.alpha))
             print(f"After view: {x.shape}")
             x = self.fc(x)

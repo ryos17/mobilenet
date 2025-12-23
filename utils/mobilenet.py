@@ -5,7 +5,8 @@ class MobileNetV1(nn.Module):
     def __init__(self, ch_in=3, n_classes=2, kernel_size=3, alpha=1.0):
         super(MobileNetV1, self).__init__()
         self.alpha = alpha
-
+        self._first_forward = True
+        
         # Full convolution block
         def conv_full(inp, oup, stride):
             oup_scaled = int(oup * alpha)
@@ -47,16 +48,29 @@ class MobileNetV1(nn.Module):
             conv_ds(512, 512, 1),
             conv_ds(512, 1024, 2),
             conv_ds(1024, 1024, 1),
-            nn.AvgPool2d(7)  
+            nn.AdaptiveAvgPool2d(1)
         )
         self.fc = nn.Linear(int(1024 * alpha), n_classes)
         self.softmax = nn.Softmax(dim=1)  
 
     def forward(self, x):
-        x = self.model(x)
-        x = x.view(-1, int(1024 * self.alpha))
-        x = self.fc(x)
-        x = self.softmax(x)
+        if self._first_forward:
+            print(f"\nInput shape: {x.shape}")
+            for i, layer in enumerate(self.model):
+                x = layer(x)
+                print(f"After layer {i} ({type(layer).__name__}): {x.shape}")
+            x = x.view(-1, int(1024 * self.alpha))
+            print(f"After view: {x.shape}")
+            x = self.fc(x)
+            print(f"After FC: {x.shape}")
+            x = self.softmax(x)
+            print(f"After softmax: {x.shape}")
+            self._first_forward = False
+        else:
+            x = self.model(x)
+            x = x.view(-1, int(1024 * self.alpha))  
+            x = self.fc(x)
+            x = self.softmax(x)
         return x
 
 if __name__=='__main__':

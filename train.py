@@ -352,12 +352,11 @@ def main():
     else:
         raise ValueError(f"Invalid model type: {args.model_type}")
     model = model.to(device)
-    
+
     # Initialize modules with a dummy forward pass to compute the input shape
-    if args.model_type == 'femto_mobilenet':
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, args.ch_in, input_size, input_size).to(device)
-            _ = model(dummy_input)
+    with torch.no_grad():
+        dummy_input = torch.zeros(1, args.ch_in, input_size, input_size).to(device)
+        _ = model(dummy_input)
     
     # Count parameters
     total_params = sum(p.numel() for p in model.parameters())
