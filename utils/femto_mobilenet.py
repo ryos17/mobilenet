@@ -11,7 +11,7 @@ class FemtoMobileNetV1(nn.Module):
         def conv_full(inp, oup, kernel=(3, 3), stride=2, padding=1):
             oup_scaled = int(oup * alpha)
             return nn.Sequential(
-                nn.LazyConv2d(oup_scaled, kernel, stride, padding, bias=False),
+                nn.Conv2d(inp, oup_scaled, kernel, stride, padding, bias=False),
                 nn.BatchNorm2d(oup_scaled, affine=False),
                 nn.ReLU(inplace=True)
             )
@@ -22,12 +22,12 @@ class FemtoMobileNetV1(nn.Module):
             oup_scaled = int(oup * alpha)
             return nn.Sequential(
                 # Depthwise convolution
-                nn.LazyConv2d(inp_scaled, kernel, stride, padding, groups=inp_scaled, bias=False),
+                nn.Conv2d(inp_scaled, inp_scaled, kernel, stride, padding, groups=inp_scaled, bias=False),
                 nn.BatchNorm2d(inp_scaled, affine=False),
                 nn.ReLU(inplace=True),
 
                 # Pointwise convolution
-                nn.LazyConv2d(oup_scaled, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.Conv2d(inp_scaled, oup_scaled, kernel_size=1, stride=1, padding=0, bias=False),
                 nn.BatchNorm2d(oup_scaled, affine=False),
                 nn.ReLU(inplace=True),
             )
@@ -60,7 +60,7 @@ class FemtoMobileNetV1(nn.Module):
 
     def forward(self, x):
         if self._first_forward:
-            print(f"Input shape: {x.shape}")
+            print(f"\nInput shape: {x.shape}")
             
             # Process through each layer and print sizes
             for i, layer in enumerate(self.model):

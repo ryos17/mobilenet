@@ -11,6 +11,7 @@ import numpy as np
 import argparse
 from utils.mobilenet import MobileNetV1
 from utils.femto_mobilenet import FemtoMobileNetV1
+from utils.fused_layers import fuse_model
 from sklearn.metrics import accuracy_score
 
 
@@ -223,6 +224,8 @@ def parse_args():
                         help='Number of classes (default: 2 for binary classification)')
     parser.add_argument('--best_model_path', type=str, default='models/best_model.pth',
                         help='Path to save the best model (default: best_model.pth)')
+    parser.add_argument('--best_fused_model_path', type=str, default='models/best_fused_model.pth',
+                        help='Path to save the best fused model (default: best_fused_model.pth)')
     
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=32,
@@ -345,7 +348,7 @@ def main():
         raise ValueError(f"Invalid model type: {args.model_type}")
     model = model.to(device)
     
-    # Initialize lazy modules (LazyConv2d) with a dummy forward pass using resolution multiplier
+    # Initialize modules with a dummy forward pass to compute the input shape
     if args.model_type == 'femto_mobilenet':
         with torch.no_grad():
             dummy_input = torch.zeros(1, args.ch_in, input_size, input_size).to(device)
@@ -390,6 +393,7 @@ def main():
     
     # Training loop
     best_val_loss = float('inf')
+    best_fused_val_loss = float('inf')
     
     for epoch in range(start_epoch, args.num_epochs):
         print(f"\nEpoch {epoch+1}/{args.num_epochs}")
@@ -400,6 +404,10 @@ def main():
         
         # Validate
         val_loss, val_acc = validate(model, val_loader, criterion, device)
+
+        # Fuse and validate on fused model
+        fused_model = fuse_model(model)
+        fused_val_loss, fused_val_acc = validate(fused_model, val_loader, criterion, device)
         
         # Update learning rate
         scheduler.step(val_loss)
@@ -411,35 +419,89 @@ def main():
             'train_acc': train_acc,
             'val_loss': val_loss,
             'val_acc': val_acc,
+            'fused_val_loss': fused_val_loss,
+            'fused_val_acc': fused_val_acc,
             'learning_rate': optimizer.param_groups[0]['lr']
         })
         
-        print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}")
-        print(f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+        print(f"{'Train Loss:':<30} {train_loss:.4f}")
+        print(f"{'Train Acc:':<30} {train_acc:.4f}")
+        print(f"{'Val Loss:':<30} {val_loss:.4f}")
+        print(f"{'Val Acc:':<30} {val_acc:.4f}")
+        print(f"{'Fused Val Loss:':<30} {fused_val_loss:.4f}")
+        print(f"{'Fused Val Acc:':<30} {fused_val_acc:.4f}")
         
         # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            best_fused_val_loss = fused_val_loss
             torch.save({
                 'model_state_dict': model.state_dict(),
                 'val_loss': val_loss,
                 'val_acc': val_acc
             }, args.best_model_path)
-            print(f"Saved best model with val_loss: {best_val_loss:.4f}, val_acc: {val_acc:.4f}")
+            torch.save({
+                'model_state_dict': fused_model.state_dict(),
+                'fused_val_loss': fused_val_loss,
+                'fused_val_acc': fused_val_acc
+            }, args.best_fused_model_path)
+            print(f"\n[Best Model Saved]  Val Loss: {best_val_loss:.4f}, Val Acc: {val_acc:.4f}")
+            print(f"[Best Fused Model Saved]  Fused Val Loss: {best_fused_val_loss:.4f}, Fused Val Acc: {fused_val_acc:.4f}")
             wandb.run.summary['best_val_loss'] = best_val_loss
             wandb.run.summary['best_val_acc'] = val_acc
+            wandb.run.summary['best_fused_val_loss'] = best_fused_val_loss
+            wandb.run.summary['best_fused_val_acc'] = fused_val_acc
     
     # Test on test set
     print("\n" + "=" * 50)
     print("Evaluating on test set...")
+
+    # Load best model
     checkpoint = torch.load(args.best_model_path)
     model.load_state_dict(checkpoint['model_state_dict'])
+
+    # Run test on best model
     test_loss, test_acc = validate(model, test_loader, criterion, device)
     print(f"Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}")
     wandb.log({'test_loss': test_loss, 'test_acc': test_acc})
     wandb.run.summary['test_loss'] = test_loss
     wandb.run.summary['test_acc'] = test_acc
     
+    # Fuse Conv+BN layers for faster inference
+    print("\n" + "=" * 50)
+    print("Fusing Conv+BN layers...")
+    fused_model = fuse_model(model)
+
+    # Print model architecture
+    print(f"\nFused Model Architecture:")
+    print(fused_model)
+
+    # Load best fused model
+    checkpoint = torch.load(args.best_fused_model_path)
+    fused_model.load_state_dict(checkpoint['model_state_dict'])
+
+    # Run test on best fused model
+    fused_test_loss, fused_test_acc = validate(fused_model, test_loader, criterion, device)
+    print(f"Fused Test Loss: {fused_test_loss:.4f}, Fused Test Acc: {fused_test_acc:.4f}")
+    
+    # Count parameters in fused model
+    fused_total_params = sum(p.numel() for p in fused_model.parameters())
+    fused_trainable_params = sum(p.numel() for p in fused_model.parameters() if p.requires_grad)
+    print(f"\nFused Model Parameters:")
+    print(f"  Total parameters: {fused_total_params:,}")
+    print(f"  Trainable parameters: {fused_trainable_params:,}")
+    
+    # Log fused model info to wandb
+    wandb.log({
+        'fused_total_params': fused_total_params,
+        'fused_trainable_params': fused_trainable_params,
+        'fused_test_loss': fused_test_loss,
+        'fused_test_acc': fused_test_acc
+    })
+    wandb.run.summary['fused_total_params'] = fused_total_params
+    wandb.run.summary['fused_trainable_params'] = fused_trainable_params
+    wandb.run.summary['fused_test_loss'] = fused_test_loss
+    wandb.run.summary['fused_test_acc'] = fused_test_acc
     wandb.finish()
     print("\nTraining completed!")
 
