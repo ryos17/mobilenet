@@ -15,6 +15,9 @@ from utils.femto_mobilenet import FemtoMobileNetV1
 from utils.fused_layers import fuse_model
 from sklearn.metrics import accuracy_score
 
+seed = 42
+np.random.seed(seed)
+torch.manual_seed(seed)
 
 class ImageDataset(Dataset):
     """Custom dataset for loading images from person and non_person directories."""
@@ -378,7 +381,7 @@ def main():
     if args.resume:
         print(f"Loading checkpoint from {args.resume}")
         checkpoint = torch.load(args.resume)
-        model.load_state_dict(checkpoint['model_state_dict'])
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
         start_epoch = checkpoint['epoch']
         print(f"Resuming from epoch {start_epoch}")
     
@@ -465,7 +468,7 @@ def main():
 
     # Load best model
     checkpoint = torch.load(args.best_model_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
 
     # Run test on best model
     test_loss, test_acc = validate(model, test_loader, criterion, device)
@@ -487,7 +490,7 @@ def main():
 
         # Load best fused model
         checkpoint = torch.load(args.best_fused_model_path)
-        fused_model.load_state_dict(checkpoint['model_state_dict'])
+        fused_model.load_state_dict(checkpoint['model_state_dict'], strict=False)
 
         # Run test on best fused model
         fused_test_loss, fused_test_acc = validate(fused_model, test_loader, criterion, device)
