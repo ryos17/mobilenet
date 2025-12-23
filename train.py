@@ -9,6 +9,7 @@ from pathlib import Path
 from tqdm import tqdm
 import numpy as np
 import argparse
+import copy
 from utils.mobilenet import MobileNetV1
 from utils.femto_mobilenet import FemtoMobileNetV1
 from utils.fused_layers import fuse_model
@@ -224,6 +225,8 @@ def parse_args():
                         help='Number of classes (default: 2 for binary classification)')
     parser.add_argument('--best_model_path', type=str, default='models/best_model.pth',
                         help='Path to save the best model (default: best_model.pth)')
+    parser.add_argument('--fuse', action='store_true',
+                        help='Fuse model (default: False)')
     parser.add_argument('--best_fused_model_path', type=str, default='models/best_fused_model.pth',
                         help='Path to save the best fused model (default: best_fused_model.pth)')
     
@@ -282,10 +285,12 @@ def main():
         'test_ratio': args.test_ratio,
         'alpha': args.alpha,
         'rho': args.rho,
+        'fuse': args.fuse,
         'input_size': input_size,
         'ch_in': args.ch_in,
         'n_classes': args.n_classes,
         'best_model_path': args.best_model_path,
+        'best_fused_model_path': args.best_fused_model_path,
         'batch_size': args.batch_size,
         'num_epochs': args.num_epochs,
         'learning_rate': args.learning_rate,
@@ -393,7 +398,7 @@ def main():
     
     # Training loop
     best_val_loss = float('inf')
-    best_fused_val_loss = float('inf')
+    best_fused_val_loss = float('inf') if args.fuse else None
     
     for epoch in range(start_epoch, args.num_epochs):
         print(f"\nEpoch {epoch+1}/{args.num_epochs}")
@@ -405,9 +410,10 @@ def main():
         # Validate
         val_loss, val_acc = validate(model, val_loader, criterion, device)
 
-        # Fuse and validate on fused model
-        fused_model = fuse_model(model)
-        fused_val_loss, fused_val_acc = validate(fused_model, val_loader, criterion, device)
+        if args.fuse:
+            fused_model = copy.deepcopy(model)
+            fused_model = fuse_model(fused_model)
+            fused_val_loss, fused_val_acc = validate(fused_model, val_loader, criterion, device)
         
         # Update learning rate
         scheduler.step(val_loss)
@@ -419,8 +425,8 @@ def main():
             'train_acc': train_acc,
             'val_loss': val_loss,
             'val_acc': val_acc,
-            'fused_val_loss': fused_val_loss,
-            'fused_val_acc': fused_val_acc,
+            'fused_val_loss': fused_val_loss if args.fuse else None,
+            'fused_val_acc': fused_val_acc if args.fuse else None,
             'learning_rate': optimizer.param_groups[0]['lr']
         })
         
@@ -428,29 +434,31 @@ def main():
         print(f"{'Train Acc:':<30} {train_acc:.4f}")
         print(f"{'Val Loss:':<30} {val_loss:.4f}")
         print(f"{'Val Acc:':<30} {val_acc:.4f}")
-        print(f"{'Fused Val Loss:':<30} {fused_val_loss:.4f}")
-        print(f"{'Fused Val Acc:':<30} {fused_val_acc:.4f}")
+        print(f"{'Fused Val Loss:':<30} {fused_val_loss:.4f}" if args.fuse else "")
+        print(f"{'Fused Val Acc:':<30} {fused_val_acc:.4f}" if args.fuse else "")
         
         # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_fused_val_loss = fused_val_loss
             torch.save({
                 'model_state_dict': model.state_dict(),
                 'val_loss': val_loss,
                 'val_acc': val_acc
             }, args.best_model_path)
-            torch.save({
-                'model_state_dict': fused_model.state_dict(),
-                'fused_val_loss': fused_val_loss,
-                'fused_val_acc': fused_val_acc
-            }, args.best_fused_model_path)
             print(f"\n[Best Model Saved]  Val Loss: {best_val_loss:.4f}, Val Acc: {val_acc:.4f}")
-            print(f"[Best Fused Model Saved]  Fused Val Loss: {best_fused_val_loss:.4f}, Fused Val Acc: {fused_val_acc:.4f}")
             wandb.run.summary['best_val_loss'] = best_val_loss
             wandb.run.summary['best_val_acc'] = val_acc
-            wandb.run.summary['best_fused_val_loss'] = best_fused_val_loss
-            wandb.run.summary['best_fused_val_acc'] = fused_val_acc
+        if args.fuse:
+            if fused_val_loss < best_fused_val_loss:
+                best_fused_val_loss = fused_val_loss
+                torch.save({
+                    'model_state_dict': fused_model.state_dict(),
+                    'fused_val_loss': fused_val_loss,
+                    'fused_val_acc': fused_val_acc
+                }, args.best_fused_model_path)   
+                print(f"[Best Fused Model Saved]  Fused Val Loss: {best_fused_val_loss:.4f}, Fused Val Acc: {fused_val_acc:.4f}")
+                wandb.run.summary['best_fused_val_loss'] = best_fused_val_loss
+                wandb.run.summary['best_fused_val_acc'] = fused_val_acc
     
     # Test on test set
     print("\n" + "=" * 50)
@@ -467,41 +475,44 @@ def main():
     wandb.run.summary['test_loss'] = test_loss
     wandb.run.summary['test_acc'] = test_acc
     
-    # Fuse Conv+BN layers for faster inference
-    print("\n" + "=" * 50)
-    print("Fusing Conv+BN layers...")
-    fused_model = fuse_model(model)
+    if args.fuse:
+        # Fuse Conv+BN layers for faster inference
+        print("\n" + "=" * 50)
+        print("Fusing Conv+BN layers...")
+        fused_model = copy.deepcopy(model)
+        fused_model = fuse_model(fused_model)
 
-    # Print model architecture
-    print(f"\nFused Model Architecture:")
-    print(fused_model)
+        # Print model architecture
+        print(f"\nFused Model Architecture:")
+        print(fused_model)
 
-    # Load best fused model
-    checkpoint = torch.load(args.best_fused_model_path)
-    fused_model.load_state_dict(checkpoint['model_state_dict'])
+        # Load best fused model
+        checkpoint = torch.load(args.best_fused_model_path)
+        fused_model.load_state_dict(checkpoint['model_state_dict'])
 
-    # Run test on best fused model
-    fused_test_loss, fused_test_acc = validate(fused_model, test_loader, criterion, device)
-    print(f"Fused Test Loss: {fused_test_loss:.4f}, Fused Test Acc: {fused_test_acc:.4f}")
-    
-    # Count parameters in fused model
-    fused_total_params = sum(p.numel() for p in fused_model.parameters())
-    fused_trainable_params = sum(p.numel() for p in fused_model.parameters() if p.requires_grad)
-    print(f"\nFused Model Parameters:")
-    print(f"  Total parameters: {fused_total_params:,}")
-    print(f"  Trainable parameters: {fused_trainable_params:,}")
-    
-    # Log fused model info to wandb
-    wandb.log({
-        'fused_total_params': fused_total_params,
-        'fused_trainable_params': fused_trainable_params,
-        'fused_test_loss': fused_test_loss,
-        'fused_test_acc': fused_test_acc
-    })
-    wandb.run.summary['fused_total_params'] = fused_total_params
-    wandb.run.summary['fused_trainable_params'] = fused_trainable_params
-    wandb.run.summary['fused_test_loss'] = fused_test_loss
-    wandb.run.summary['fused_test_acc'] = fused_test_acc
+        # Run test on best fused model
+        fused_test_loss, fused_test_acc = validate(fused_model, test_loader, criterion, device)
+        print(f"Fused Test Loss: {fused_test_loss:.4f}, Fused Test Acc: {fused_test_acc:.4f}")
+        
+        # Count parameters in fused model
+        fused_total_params = sum(p.numel() for p in fused_model.parameters())
+        fused_trainable_params = sum(p.numel() for p in fused_model.parameters() if p.requires_grad)
+        print(f"\nFused Model Parameters:")
+        print(f"  Total parameters: {fused_total_params:,}")
+        print(f"  Trainable parameters: {fused_trainable_params:,}")
+        
+        # Log fused model info to wandb
+        wandb.log({
+            'fused_total_params': fused_total_params,
+            'fused_trainable_params': fused_trainable_params,
+            'fused_test_loss': fused_test_loss,
+            'fused_test_acc': fused_test_acc
+        })
+        wandb.run.summary['fused_total_params'] = fused_total_params
+        wandb.run.summary['fused_trainable_params'] = fused_trainable_params
+        wandb.run.summary['fused_test_loss'] = fused_test_loss
+        wandb.run.summary['fused_test_acc'] = fused_test_acc
+        
     wandb.finish()
     print("\nTraining completed!")
 

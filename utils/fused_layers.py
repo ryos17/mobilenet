@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-def fuse_conv_and_bn(conv, bn, bias=False):
+def fuse_conv_and_bn(conv, bn, bias=True):
     """Fuse Conv2d and BatchNorm2d into a single Conv2d layer.
     
     Args:
