@@ -515,6 +515,52 @@ def main():
         wandb.run.summary['fused_test_loss'] = fused_test_loss
         wandb.run.summary['fused_test_acc'] = fused_test_acc
         
+        # Export SPU layers as pt2 file
+        if args.model_type == 'femto_mobilenet':
+            print("\n" + "=" * 50)
+            print("Exporting SPU layers as pt2 file...")
+            
+            # Create a model containing only SPU layers (indices 5-8)
+            class SPUModel(nn.Module):
+                def __init__(self, original_model):
+                    super().__init__()
+                    # Extract SPU layers (indices 5-8 from the Sequential)
+                    self.spu_layers = nn.Sequential(*list(original_model.model.children())[5:9])
+                
+                def forward(self, x):
+                    return self.spu_layers(x)
+            
+            spu_model = SPUModel(fused_model)
+            spu_model.eval()
+            
+            # Determine input shape for SPU (output of layer 4)
+            with torch.no_grad():
+                dummy_input = torch.zeros(1, args.ch_in, input_size, input_size).to(device)
+                # Forward through CPU layers (0-4) to get SPU input shape
+                cpu_output = dummy_input
+                for i in range(5):
+                    cpu_output = fused_model.model[i](cpu_output)
+                spu_input_shape = cpu_output.shape
+                print(f"SPU input shape (after layer 4): {spu_input_shape}")
+            
+            # Create example input for export
+            example_input = torch.zeros(1, *spu_input_shape[1:]).to(device)
+            
+            # Export full fused model to pt2 format
+            print("Exporting full fused model as pt2 file...")
+            full_example_input = torch.zeros(1, args.ch_in, input_size, input_size).to(device)
+            exported_full_model = torch.export.export(fused_model, (full_example_input,))
+            full_pt2_path = args.best_fused_model_path.replace('.pth', '_full.pt2')
+            torch.export.save(exported_full_model, full_pt2_path)
+            print(f"Successfully exported full fused model to {full_pt2_path}")
+            
+            # Export SPU layers to pt2 format
+            print("Exporting SPU layers as pt2 file...")
+            exported_model = torch.export.export(spu_model, (example_input,))
+            spu_pt2_path = args.best_fused_model_path.replace('.pth', '_spu_layers.pt2')
+            torch.export.save(exported_model, spu_pt2_path)
+            print(f"Successfully exported SPU layers to {spu_pt2_path}")
+        
     wandb.finish()
     print("\nTraining completed!")
 
